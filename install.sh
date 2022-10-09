@@ -8,6 +8,7 @@ f_dir='/usr/local/bin';
 	sudo cp -p './spawn' "$f_dir/";
 
 m_dir='/usr/local/share/man/man1';
+[ -d "$m_dir" ] || sudo mkdir -p "$m_dir";
 [ -r "$m_dir/spawn.1.gz" ] ||
 	sudo cp -p './spawn.1.gz' "$m_dir/";
 
