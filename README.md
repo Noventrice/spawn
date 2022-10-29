@@ -6,9 +6,3 @@ This is different from pressing <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>T</kbd> beca
 You will need to follow the instructions from runing install.sh.
 You will eventually be instructed change your shell's init file.
 Changing the init file is necessary because the spawned shell will need to clean up after the spawner.
-
-I put the responsibility of changing your init file onto you so that you could personalize the code there.
-Also, if I add code to the end of the your init file there is no guarantee that the appended code is in a reachable state.
-Adding it to the beginning would work, but, I would hate if I installed something that did this.
-
-I may change the installer to be more interactive in the future.
