@@ -1,0 +1,189 @@
+#!/bin/bash
+
+###This is a script that is meant to be imported from your
+###.bashrc file.
+###It is designed to open up another teminal emulator window.
+###To import this, source this script from your .bashrc file.
+###For information on how to do that try:
+###$ help source;
+
+
+###Your .bashrc should have something like this:
+###. spawn;
+###if spawned;then
+###  get_spawn;
+###else
+###  #Whatever code you want when spawning doesn't happen.
+###fi
+
+[ -e ~/.spawn ] || mkdir ~/.spawn;
+spawn_cmd_file=~/.spawn/spawn_shell;
+
+while [ "$#" != 0 ];do
+	case "$1" in
+	-t) spawn_test_dir="$2"; shift 2;;
+	-n) spawn_default_dir="$2"; shift 2;;
+	*)
+		printf '%s\n' "Unknown option ($1) given to the spawn script." >&2;
+		shift;
+		;;
+	esac
+done
+
+#Every terminal emulator I've found starts the shell as a subprocess,
+#rather than exec'ing the shell (thereby taking its name).
+#So, the parent PID (PPID) of the shell should be a terminal emulator.
+#But, only if the shell is being emulated
+#(not a subshell or a login shell).
+if [ -z "$TERM_EMULATOR" ];then
+	export TERM_EMULATOR="$(
+		#ps -o 'comm=' "$(ps -o ppid:1= "$$";)";
+		ps -o 'comm=' "$PPID";
+	)";
+fi
+
+
+die_spawn(){
+	if [ -n "$optind" ];then
+		OPTIND="$optind";
+	else
+		unset OPTIND;
+	fi
+	printf '%s\n' "$1";
+	return 1;
+}
+
+#This is the function you call to get a new teminal emulator window.
+#Aside from the flags below, you can supply a command to run
+#after giving a directory as $1.
+spawn(){
+	[ "$#" -gt 0 ] && [ "${1:0:1}" != '-' ] && set -- -p "$@";
+	local wd= cmd= name=;
+
+	while getopts ':ntp:c:' name "$@";do
+		case "$name" in
+		n) wd="${spawn_default_dir:?This variable is not initialized.}";;
+		t) wd="${spawn_test_dir:?This variable is not initialized.}";;
+		#$TERM_EMULATOR will spawn at the caller's $PWD,
+		#but the spawned shell's rc file may change that afterwards.
+		#So, you don't need to replace `.' and `..' here.
+		p) wd="$OPTARG";;
+		c)
+			cmd="$OPTARG";
+			:>~/.spawn/importable_hist;
+			;;
+		:)
+			die_spawn "-$OPTARG requires an argument.";
+			return;
+			;;
+		?)
+			die_spawn "-$OPTARG is not a valid option.";
+			return;
+			;;
+		esac
+	done
+	: "${wd:="$PWD"}";
+	unset OPTIND;
+
+	#cd here rather than [ -d ... ] to mesh with $CDPATH.
+	(cd "$wd") || return 1;
+	printf -- 'cd %q;' "$wd" > "$spawn_cmd_file";
+	[ -n "$cmd" ] &&
+		printf -- '%s\n' "$cmd" >> "$spawn_cmd_file";
+
+	command "$TERM_EMULATOR";
+}
+
+spawned(){
+	[ -r "$spawn_cmd_file" ];
+}
+
+#In case a failure happens somewhere in this function,
+#this has been seperated from the `spawned' function.
+get_spawn(){
+	local cmds="$(<"$spawn_cmd_file")";
+	if [ -e ~/.spawn/importable_hist ];then
+		rm ~/.spawn/importable_hist;
+		history -s "$cmds";
+	fi
+	eval "$cmds";
+	rm "$spawn_cmd_file";
+}
+
+#realpath(1) isn't a shell builtin and I have hubris.
+_expand_path(){
+	local ret;
+	case "$1" in
+	.|./*)   ret="${1/#./$PWD}";;
+	..|../*) ret="${1/#../${PWD%/*}}"; ret="${ret:-/}";;
+	\~+*)    ret="${1/#\~+/$PWD}";;
+	\~-*)    ret="${1/#\~-/$OLDPWD}";;
+	\~*)     ret="${1/#\~/$HOME}";;
+	*)       ret="$1";
+	esac
+	printf '%s\n' "$ret";
+}
+
+
+
+##Tab completion:
+#case "${0#-}" in #Bug: this only works in bashrc (not zshrc) b/c sourcing.
+case "$(declare -p {BA,Z}SH_VERSION 2>/dev/null)" in
+*BASH*)
+	comp_spawn(){
+		[[ "${COMP_WORDS[COMP_CWORD-1]}" = \-*p ]] || return 0;
+		
+		local -a cdpath;
+		IFS=':' read -ra cdpath <<<"$CDPATH";
+		cdpath=("${cdpath[@]%/}");
+
+		local reset_glob;
+		shopt -q nullglob || reset_glob='set';
+		shopt -s nullglob;
+
+		local updir="${PWD%/*}"; updir="${updir:=/}";
+
+		#Completion automatically outputs unique results.
+		#Duplicates in COMPREPLY are culled to be unique.
+		#Therefore, it is important to expand . .. and ~.
+		COMP_WORDS[COMP_CWORD]="$(
+			_expand_path "${COMP_WORDS[COMP_CWORD]}"
+		)";
+
+		local p= dotdir= dotdotdir=;
+		for p in "${cdpath[@]}";do
+			p="$(_expand_path "$p")";
+
+			#{,dot}dotdir will used on subsequent iterations of this loop.
+			#Don't merge with the following `if' statement.
+			[ "$p" = '.' ]  && dotdir='set';
+			[ "$p" = '..' ] && dotdotdir='set';
+			
+			#. or .. can expand to $PWD, but so can ~/[...].
+			#So, you can skip ~/[...] when:
+			#	you have previously found . or ..,
+			#	and $p is equiv. to . or `..'.
+			if {
+				[ -n "$dotdir" ] && [ "$p" = "$PWD" ]
+			} || {
+				[ -n "$dotdotdir" ] && [ "$p" = "$updir" ]
+			}; then
+				continue;
+			fi
+
+			local dir;
+			#nullglob is on.
+			for dir in {"$p/",}"${COMP_WORDS[COMP_CWORD]}"*;do
+				[ -d "$dir" ] && COMPREPLY+=("$dir/");
+			done
+		done
+
+		[ -n "$reset_glob" ] && shopt -u nullglob;
+	}
+
+	complete -F comp_spawn spawn;
+	;;
+
+#*ZSH*) :;; #TODO
+*) :;;
+esac
