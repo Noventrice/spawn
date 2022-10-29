@@ -13,7 +13,9 @@ m_dir='/usr/local/share/man/man1';
 	sudo cp -p './spawn.1.gz' "$m_dir/";
 
 printf \
-"The files have been installed,
+"
+==========================================================================
+The files have been installed,
 but you still need to setup your shell's init file.
 This installer will add code to the end of your init file if you want.
 There is no guarantee that the appended code will be reachable.
@@ -30,6 +32,8 @@ but you can change them later. See the manual for more.
 To end installation to manually install, enter \"q\".
 To do a basic install without -n or -t, enter \"b\".
 To do an advanced install with -n and/or -t, enter \"a\".
+==========================================================================
+
 " >&2;
 
 while read -p 'How do you want to proceed? ' answer || exit 1;do
